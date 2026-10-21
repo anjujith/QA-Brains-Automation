@@ -51,7 +51,7 @@ The project includes automated tests for:
 - Maven project configuration
 
 ## Test Execution Results
-**Latest test execution: 13 passed, 1 failed.**
+**Latest test execution: 12 passed, 1 failed.**
 
 The tests were executed using TestNG in Eclipse. Results may vary depending on website availability and changes to the application.
 
