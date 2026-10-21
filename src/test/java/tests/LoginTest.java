@@ -2,6 +2,8 @@
 package tests;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.ElementClickInterceptedException;
@@ -38,7 +40,6 @@ public class LoginTest {
                 ExpectedConditions.urlToBe(PRODUCTS_URL));
     }
 
-    // Click an element after scrolling it into view.
     private void clickAfterScroll(
             WebDriver driver, WebDriverWait wait, By locator) {
 
@@ -55,10 +56,8 @@ public class LoginTest {
         try {
             wait.until(
                     ExpectedConditions.elementToBeClickable(locator)).click();
-
         } catch (ElementClickInterceptedException e) {
             element = driver.findElement(locator);
-
             ((JavascriptExecutor) driver).executeScript(
                     "arguments[0].click();", element);
         }
@@ -85,21 +84,14 @@ public class LoginTest {
     }
 
     private By cartIconLocator() {
-        return By.cssSelector(
-                "#ecommerce-header span[role='button']");
+        return By.cssSelector("#ecommerce-header span[role='button']");
     }
 
     private void openCart(WebDriver driver, WebDriverWait wait) {
-        By cartIcon = cartIconLocator();
+        ((JavascriptExecutor) driver).executeScript("window.scrollTo(0, 0);");
 
         WebElement cart = wait.until(
-                ExpectedConditions.visibilityOfElementLocated(cartIcon));
-
-        ((JavascriptExecutor) driver).executeScript(
-                "window.scrollTo(0, 0);");
-
-        cart = wait.until(
-                ExpectedConditions.visibilityOfElementLocated(cartIcon));
+                ExpectedConditions.elementToBeClickable(cartIconLocator()));
 
         ((JavascriptExecutor) driver).executeScript(
                 "arguments[0].click();", cart);
@@ -108,6 +100,25 @@ public class LoginTest {
                 By.xpath("//button[normalize-space(.)='+']")));
 
         System.out.println("Cart panel opened successfully.");
+    }
+
+    private List<String> getProductNames(
+            WebDriver driver, WebDriverWait wait, By locator) {
+
+        List<WebElement> elements = wait.until(
+                ExpectedConditions.visibilityOfAllElementsLocatedBy(locator));
+
+        List<String> names = new ArrayList<>();
+
+        for (WebElement element : elements) {
+            String name = element.getText().trim();
+
+            if (!name.isEmpty()) {
+                names.add(name);
+            }
+        }
+
+        return names;
     }
 
     // 1. Positive Login Test
@@ -178,12 +189,15 @@ public class LoginTest {
                     "//*[normalize-space()='Sample Shoe Name']");
 
             Assert.assertTrue(
-                    wait.until(ExpectedConditions.visibilityOfElementLocated(
-                            shirt)).isDisplayed(),
+                    wait.until(
+                            ExpectedConditions.visibilityOfElementLocated(shirt))
+                            .isDisplayed(),
                     "Sample shirt is not displayed.");
 
             Assert.assertTrue(
-                    driver.findElement(shoe).isDisplayed(),
+                    wait.until(
+                            ExpectedConditions.visibilityOfElementLocated(shoe))
+                            .isDisplayed(),
                     "Sample shoe is not displayed.");
 
             System.out.println("PASS: Product listing test.");
@@ -195,33 +209,88 @@ public class LoginTest {
 
     // 4. Product Sorting Test
     @Test
-    public void productSortingTest() {
+    public void productSortingTest() throws InterruptedException {
+
         WebDriver driver = new ChromeDriver();
 
         try {
             driver.manage().window().maximize();
+
+            // Step 1: Login
             login(driver);
 
             WebDriverWait wait = createWait(driver);
 
+            // Step 2: Locate product names
+            By productNames = By.cssSelector(
+                    "a.font-oswald[href*='/ecommerce/product-details']"
+            );
+
+            // Step 3: Get product order before sorting
+            List<String> initialNames =
+                    getProductNames(driver, wait, productNames);
+
+            System.out.println("Before sorting: " + initialNames);
+
+            // Step 4: Open sorting dropdown
             By sortingDropdown = By.cssSelector("[role='combobox']");
+
             clickAfterScroll(driver, wait, sortingDropdown);
 
+            // Step 5: Find the A to Z option
             By ascendingOption = By.xpath(
-                    "//*[normalize-space()='A to Z (Ascending)']");
+                    "//*[normalize-space()='A to Z (Ascending)']"
+            );
 
-            Assert.assertTrue(
-                    wait.until(ExpectedConditions.visibilityOfElementLocated(
-                            ascendingOption)).isDisplayed(),
-                    "A to Z sorting option is not displayed.");
+            // Find a visible matching option
+            List<WebElement> options = wait.until(d -> {
+                List<WebElement> visibleOptions = new ArrayList<>();
 
-            System.out.println(
-                    "PASS: A to Z sorting option is displayed.");
+                for (WebElement element : d.findElements(ascendingOption)) {
+                    if (element.isDisplayed()) {
+                        visibleOptions.add(element);
+                    }
+                }
+
+                return visibleOptions.isEmpty() ? null : visibleOptions;
+            });
+
+            WebElement option = options.get(options.size() - 1);
+
+            // Step 6: Select A to Z
+            ((JavascriptExecutor) driver)
+                    .executeScript("arguments[0].click();", option);
+
+            // Allow the page to update
+            Thread.sleep(2000);
+
+            // Step 7: Read actual product order
+            List<String> actualNames =
+                    getProductNames(driver, wait, productNames);
+
+            // Step 8: Create expected alphabetical order
+            List<String> expectedNames =
+                    new ArrayList<>(actualNames);
+
+            expectedNames.sort(String.CASE_INSENSITIVE_ORDER);
+
+            // Step 9: Print and verify
+            System.out.println("Actual order: " + actualNames);
+            System.out.println("Expected A-Z order: " + expectedNames);
+
+            Assert.assertEquals(
+                    actualNames,
+                    expectedNames,
+                    "Product sorting failed: products are not in A-Z order."
+            );
+
+            System.out.println("PASS: A-to-Z sorting verified.");
 
         } finally {
             driver.quit();
         }
     }
+
 
     // 5. Invalid Login Data Provider
     @DataProvider(name = "invalidLoginData")
@@ -293,8 +362,8 @@ public class LoginTest {
                     "Product name is not displayed.");
 
             Assert.assertTrue(
-                    driver.findElement(
-                            By.xpath("//*[normalize-space()='$49.99']"))
+                    wait.until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//*[normalize-space()='$49.99']")))
                             .isDisplayed(),
                     "Product price is not displayed.");
 
@@ -318,12 +387,15 @@ public class LoginTest {
             WebDriverWait wait = createWait(driver);
             addShirtToCart(driver, wait);
 
+            By removeButton = By.xpath(
+                    "//button[contains(translate(.,"
+                    + "'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+                    + "'abcdefghijklmnopqrstuvwxyz'),'remove from cart')]");
+
             Assert.assertTrue(
-                    driver.findElement(By.xpath(
-                            "//button[contains(translate(.,"
-                            + "'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
-                            + "'abcdefghijklmnopqrstuvwxyz'),"
-                            + "'remove from cart')]")).isDisplayed(),
+                    wait.until(
+                            ExpectedConditions.visibilityOfElementLocated(
+                                    removeButton)).isDisplayed(),
                     "Product was not added to the cart.");
 
             System.out.println("PASS: Add to Cart test.");
@@ -348,18 +420,17 @@ public class LoginTest {
             By removeButton = By.xpath(
                     "//button[contains(translate(.,"
                     + "'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
-                    + "'abcdefghijklmnopqrstuvwxyz'),"
-                    + "'remove from cart')]");
+                    + "'abcdefghijklmnopqrstuvwxyz'),'remove from cart')]");
 
             clickAfterScroll(driver, wait, removeButton);
 
-            wait.until(ExpectedConditions.visibilityOfElementLocated(
-                    addToCartButtonFor("Sample Shirt Name")));
+            By addButton = addToCartButtonFor("Sample Shirt Name");
+
+            wait.until(
+                    ExpectedConditions.visibilityOfElementLocated(addButton));
 
             Assert.assertTrue(
-                    driver.findElement(
-                            addToCartButtonFor("Sample Shirt Name"))
-                            .isDisplayed(),
+                    driver.findElement(addButton).isDisplayed(),
                     "Product was not removed from the cart.");
 
             System.out.println("PASS: Remove from Cart test.");
@@ -379,6 +450,7 @@ public class LoginTest {
             login(driver);
 
             WebDriverWait wait = createWait(driver);
+
             addShirtToCart(driver, wait);
             openCart(driver, wait);
 
@@ -386,12 +458,7 @@ public class LoginTest {
                     "//button[normalize-space(.)='+']");
 
             WebElement plus = wait.until(
-                    ExpectedConditions.visibilityOfElementLocated(
-                            plusButton));
-
-            ((JavascriptExecutor) driver).executeScript(
-                    "arguments[0].scrollIntoView({block:'center'});",
-                    plus);
+                    ExpectedConditions.elementToBeClickable(plusButton));
 
             ((JavascriptExecutor) driver).executeScript(
                     "arguments[0].click();", plus);
@@ -400,8 +467,8 @@ public class LoginTest {
                     "//span[contains(@class,'border')"
                     + " and normalize-space(.)='2']");
 
-            wait.until(ExpectedConditions.visibilityOfElementLocated(
-                    quantityTwo));
+            wait.until(
+                    ExpectedConditions.visibilityOfElementLocated(quantityTwo));
 
             Assert.assertEquals(
                     driver.findElement(quantityTwo).getText(),
@@ -435,6 +502,7 @@ public class LoginTest {
             login(driver);
 
             WebDriverWait wait = createWait(driver);
+
             addShirtToCart(driver, wait);
             openCart(driver, wait);
 
@@ -499,17 +567,14 @@ public class LoginTest {
 
             WebDriverWait wait = createWait(driver);
 
-            // Add product to cart.
             addShirtToCart(driver, wait);
             openCart(driver, wait);
 
-            // Open checkout.
             By checkoutButton = By.xpath(
                     "//button[.//span[normalize-space()='Checkout']]");
 
             clickAfterScroll(driver, wait, checkoutButton);
 
-            // Enter customer information.
             WebElement firstName = wait.until(
                     ExpectedConditions.visibilityOfElementLocated(
                             By.cssSelector("input[placeholder='Ex. John']")));
@@ -521,7 +586,6 @@ public class LoginTest {
             firstName.sendKeys("Anjana");
             lastName.sendKeys("Jithesh");
 
-            // Continue to the overview page.
             By continueButton = By.xpath(
                     "//button[.//span[normalize-space()='Continue']]");
 
@@ -530,14 +594,12 @@ public class LoginTest {
             wait.until(ExpectedConditions.visibilityOfElementLocated(
                     By.xpath("//*[normalize-space()='Checkout: Overview']")));
 
-            // Verify product.
             Assert.assertTrue(
-                    driver.findElement(
-                            By.xpath("//*[normalize-space()='Sample Shirt Name']"))
+                    wait.until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//*[normalize-space()='Sample Shirt Name']")))
                             .isDisplayed(),
                     "Product is missing from checkout overview.");
 
-            // Verify total price using a flexible locator.
             By totalPrice = By.xpath(
                     "//*[contains(normalize-space(.), '$52.49')]");
 
@@ -547,13 +609,11 @@ public class LoginTest {
                                     totalPrice)).isDisplayed(),
                     "Expected order total $52.49 was not displayed.");
 
-            // Finish the order.
             By finishButton = By.xpath(
                     "//button[.//span[normalize-space()='Finish']]");
 
             clickAfterScroll(driver, wait, finishButton);
 
-            // Verify that the Finish action navigates away from overview.
             wait.until(d ->
                     d.findElements(By.xpath(
                             "//*[normalize-space()='Checkout: Overview']"))
